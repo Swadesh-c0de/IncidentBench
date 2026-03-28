@@ -1,0 +1,142 @@
+{
+  "scenario_id": "easy_email_queue_blocked",
+  "title": "Transactional email queue blocked",
+  "difficulty": "easy",
+  "service": "email",
+  "incident_summary": "Password reset and invoice emails are delayed; queue depth alarm is firing.",
+  "alerts": [
+    {
+      "id": "ee1_alert_queue_depth",
+      "type": "alert",
+      "title": "Email queue backlog",
+      "content": "Primary queue depth climbed from 3k to 94k messages.",
+      "relevant": true,
+      "tags": [
+        "email",
+        "queue"
+      ]
+    },
+    {
+      "id": "ee1_alert_bounce_rate",
+      "type": "alert",
+      "title": "Bounce rate notice",
+      "content": "Bounce rate up by 1.1%, below SEV threshold.",
+      "relevant": false,
+      "tags": [
+        "email",
+        "deliverability"
+      ],
+      "unlock_condition": "ee1_alert_queue_depth"
+    }
+  ],
+  "logs": [
+    {
+      "id": "ee1_log_consumer_panic",
+      "type": "log",
+      "title": "Queue consumer panic",
+      "content": "consumer pod crashed: panic in attachment sanitizer dependency.",
+      "relevant": true,
+      "tags": [
+        "consumer",
+        "panic"
+      ],
+      "unlock_condition": "ee1_alert_queue_depth"
+    },
+    {
+      "id": "ee1_log_provider_throttle",
+      "type": "log",
+      "title": "Provider throttle warning",
+      "content": "provider responded with soft throttle headers intermittently.",
+      "relevant": false,
+      "tags": [
+        "provider"
+      ],
+      "unlock_condition": "ee1_alert_queue_depth"
+    },
+    {
+      "id": "ee1_log_deadletter_queue",
+      "type": "log",
+      "title": "Dead-letter queue growth",
+      "content": "dead-letter queue grew as backlog retried, but root signal remains consumer crash pattern.",
+      "relevant": false,
+      "tags": [
+        "queue",
+        "dlq"
+      ],
+      "unlock_condition": "ee1_alert_queue_depth"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "ee1_runbook_drain_backlog",
+      "type": "runbook",
+      "title": "Queue drain runbook",
+      "content": "Restart consumer deployment and run backlog drain command with rate cap.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "queue"
+      ],
+      "unlock_condition": "ee1_log_consumer_panic"
+    },
+    {
+      "id": "ee1_runbook_template_lint",
+      "type": "runbook",
+      "title": "Template linting",
+      "content": "Template linting is not a blocker for queue transport outages.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "templates"
+      ],
+      "unlock_condition": "ee1_alert_queue_depth"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "ee1_timeline_dependency_upgrade",
+      "type": "timeline",
+      "title": "Sanitizer library upgrade",
+      "content": "attachment-sanitizer upgraded in latest email worker image.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "deploy"
+      ],
+      "unlock_condition": "ee1_log_consumer_panic"
+    }
+  ],
+  "red_herrings": [
+    "CRM newsletter campaign was scheduled but uses a separate bulk-sending pipeline."
+  ],
+  "true_severity": "SEV-2",
+  "true_owner_team": "email-ops",
+  "true_root_cause": "Email queue consumer crashed and blocked backlog processing",
+  "true_root_cause_aliases": [
+    "consumer panic in email worker",
+    "queue consumer crash caused backlog"
+  ],
+  "true_mitigation": "Restart consumer and drain queue backlog safely",
+  "true_mitigation_aliases": [
+    "recycle email consumer and run backlog drain",
+    "restart worker then process queued messages"
+  ],
+  "required_evidence_ids": [
+    "ee1_alert_queue_depth",
+    "ee1_log_consumer_panic",
+    "ee1_runbook_drain_backlog"
+  ],
+  "max_steps": 8,
+  "initial_visible_evidence_ids": [
+    "ee1_alert_queue_depth"
+  ],
+  "recommended_actions": [
+    "inspect_alert ee1_alert_queue_depth",
+    "inspect_log ee1_log_consumer_panic",
+    "set_severity SEV-2",
+    "assign_team email-ops",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

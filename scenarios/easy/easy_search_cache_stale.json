@@ -1,0 +1,132 @@
+{
+  "scenario_id": "easy_search_cache_stale",
+  "title": "Search results stale after invalidation pause",
+  "difficulty": "easy",
+  "service": "search",
+  "incident_summary": "Users report outdated product results; freshness dashboard drift is rising.",
+  "alerts": [
+    {
+      "id": "es1_alert_freshness_lag",
+      "type": "alert",
+      "title": "Freshness lag",
+      "content": "Index freshness lag increased from 2m to 28m.",
+      "relevant": true,
+      "tags": [
+        "search",
+        "freshness"
+      ]
+    },
+    {
+      "id": "es1_alert_qps_dip",
+      "type": "alert",
+      "title": "Minor QPS dip",
+      "content": "Search QPS dropped 4% during the same interval.",
+      "relevant": false,
+      "tags": [
+        "search",
+        "traffic"
+      ],
+      "unlock_condition": "es1_alert_freshness_lag"
+    }
+  ],
+  "logs": [
+    {
+      "id": "es1_log_invalidator_paused",
+      "type": "log",
+      "title": "Cache invalidator paused",
+      "content": "invalidation-worker paused due to stuck lease heartbeat.",
+      "relevant": true,
+      "tags": [
+        "cache",
+        "worker"
+      ],
+      "unlock_condition": "es1_alert_freshness_lag"
+    },
+    {
+      "id": "es1_log_indexer_cpu",
+      "type": "log",
+      "title": "Indexer CPU elevated",
+      "content": "indexer CPU peaked at 74% but no throttling observed.",
+      "relevant": false,
+      "tags": [
+        "indexer",
+        "capacity"
+      ],
+      "unlock_condition": "es1_alert_freshness_lag"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "es1_runbook_cache_flush",
+      "type": "runbook",
+      "title": "Stale cache mitigation",
+      "content": "Resume invalidation worker, flush stale cache prefixes, and verify freshness trend.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "cache"
+      ],
+      "unlock_condition": "es1_log_invalidator_paused"
+    },
+    {
+      "id": "es1_runbook_query_tuning",
+      "type": "runbook",
+      "title": "Query ranking tuning",
+      "content": "Do not tune ranking during freshness incidents.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "ranking"
+      ],
+      "unlock_condition": "es1_alert_freshness_lag"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "es1_timeline_lease_renewal",
+      "type": "timeline",
+      "title": "Lease service patch",
+      "content": "Lease service patch applied 15m before freshness lag began.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "dependency"
+      ],
+      "unlock_condition": "es1_log_invalidator_paused"
+    }
+  ],
+  "red_herrings": [
+    "Marketing team launched a new campaign causing temporary search QPS variability."
+  ],
+  "true_severity": "SEV-3",
+  "true_owner_team": "search-infra",
+  "true_root_cause": "Cache invalidation worker paused after lease heartbeat failure",
+  "true_root_cause_aliases": [
+    "stuck cache invalidator lease",
+    "search cache invalidation paused"
+  ],
+  "true_mitigation": "Resume invalidation worker and flush stale cache keys",
+  "true_mitigation_aliases": [
+    "restart invalidator then flush stale cache",
+    "resume cache invalidation and clear stale prefixes"
+  ],
+  "required_evidence_ids": [
+    "es1_alert_freshness_lag",
+    "es1_log_invalidator_paused",
+    "es1_runbook_cache_flush"
+  ],
+  "max_steps": 8,
+  "initial_visible_evidence_ids": [
+    "es1_alert_freshness_lag",
+    "es1_alert_qps_dip"
+  ],
+  "recommended_actions": [
+    "inspect_alert es1_alert_freshness_lag",
+    "inspect_log es1_log_invalidator_paused",
+    "set_severity SEV-3",
+    "assign_team search-infra",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

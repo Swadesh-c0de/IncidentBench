@@ -1,0 +1,142 @@
+{
+  "scenario_id": "easy_auth_token_expiry",
+  "title": "Auth tokens rejected after key expiry",
+  "difficulty": "easy",
+  "service": "auth",
+  "incident_summary": "Login attempts are failing with 401 spikes after midnight key-rotation window.",
+  "alerts": [
+    {
+      "id": "ea1_alert_401_spike",
+      "type": "alert",
+      "title": "401 rate spike",
+      "content": "401 responses rose from 1.2% to 24% in 10 minutes.",
+      "relevant": true,
+      "tags": [
+        "auth",
+        "error_rate"
+      ]
+    },
+    {
+      "id": "ea1_alert_login_latency",
+      "type": "alert",
+      "title": "Login latency warning",
+      "content": "P95 login latency increased by 120ms but stays below SLO burn threshold.",
+      "relevant": false,
+      "tags": [
+        "auth",
+        "latency"
+      ],
+      "unlock_condition": "ea1_alert_401_spike"
+    }
+  ],
+  "logs": [
+    {
+      "id": "ea1_log_jwt_expired",
+      "type": "log",
+      "title": "JWT signer key expired",
+      "content": "token_issuer: signature key kid=2026-03 expired at 00:00 UTC",
+      "relevant": true,
+      "tags": [
+        "jwt",
+        "key-rotation"
+      ],
+      "unlock_condition": "ea1_alert_401_spike"
+    },
+    {
+      "id": "ea1_log_password_reset_noise",
+      "type": "log",
+      "title": "Password reset retries",
+      "content": "password-reset worker retrying transient redis timeouts",
+      "relevant": false,
+      "tags": [
+        "background-job"
+      ],
+      "unlock_condition": "ea1_alert_401_spike"
+    },
+    {
+      "id": "ea1_log_rate_limit_noise",
+      "type": "log",
+      "title": "rate limiter warning",
+      "content": "Spike in unauthenticated probes triggered perimeter limiter but auth token path remained unaffected.",
+      "relevant": false,
+      "unlock_condition": "ea1_alert_401_spike",
+      "tags": [
+        "auth",
+        "noise"
+      ]
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "ea1_runbook_key_rotation",
+      "type": "runbook",
+      "title": "Auth signing key rotation",
+      "content": "Rotate active signing key, reload token issuer deployment, and validate /jwks endpoint.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "auth"
+      ],
+      "unlock_condition": "ea1_log_jwt_expired"
+    },
+    {
+      "id": "ea1_runbook_login_rate_limit",
+      "type": "runbook",
+      "title": "Rate-limit tuning",
+      "content": "Adjust login brute-force threshold only when attack telemetry confirms malicious traffic.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "security"
+      ],
+      "unlock_condition": "ea1_alert_401_spike"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "ea1_timeline_cron_failed",
+      "type": "timeline",
+      "title": "Key rotation cron failure",
+      "content": "Scheduled key rotation cron failed due to missing secret-manager permission.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "automation"
+      ],
+      "unlock_condition": "ea1_log_jwt_expired"
+    }
+  ],
+  "red_herrings": [
+    "Search API deploy completed 20 minutes earlier with no auth dependency changes."
+  ],
+  "true_severity": "SEV-2",
+  "true_owner_team": "auth-oncall",
+  "true_root_cause": "JWT signing key expired because rotation cron failed",
+  "true_root_cause_aliases": [
+    "expired auth signing key",
+    "token signer key rotation failed"
+  ],
+  "true_mitigation": "Rotate signing key and restart token issuer pods",
+  "true_mitigation_aliases": [
+    "perform key rotation and reload auth issuer",
+    "rotate jwt key then restart auth service"
+  ],
+  "required_evidence_ids": [
+    "ea1_alert_401_spike",
+    "ea1_log_jwt_expired",
+    "ea1_runbook_key_rotation"
+  ],
+  "max_steps": 8,
+  "initial_visible_evidence_ids": [
+    "ea1_alert_401_spike"
+  ],
+  "recommended_actions": [
+    "inspect_alert ea1_alert_401_spike",
+    "inspect_log ea1_log_jwt_expired",
+    "set_severity SEV-2",
+    "assign_team auth-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}
