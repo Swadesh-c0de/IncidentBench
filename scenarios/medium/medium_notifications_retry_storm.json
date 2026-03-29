@@ -1,0 +1,147 @@
+{
+  "scenario_id": "medium_notifications_retry_storm",
+  "title": "Notification retry storm causes queue pressure",
+  "difficulty": "medium",
+  "service": "notifications",
+  "incident_summary": "Push and SMS latency degrade while worker throughput spikes unexpectedly.",
+  "alerts": [
+    {
+      "id": "mn1_alert_retry_qps",
+      "type": "alert",
+      "title": "Retry QPS explosion",
+      "content": "Retry traffic increased 14x and saturates worker queue.",
+      "relevant": true,
+      "tags": [
+        "notifications",
+        "retry"
+      ]
+    },
+    {
+      "id": "mn1_alert_provider_ack_delay",
+      "type": "alert",
+      "title": "Provider ack delay",
+      "content": "Provider acknowledgements are 120ms slower than normal.",
+      "relevant": false,
+      "tags": [
+        "provider",
+        "latency"
+      ],
+      "unlock_condition": "mn1_alert_retry_qps"
+    }
+  ],
+  "logs": [
+    {
+      "id": "mn1_log_backoff_zero",
+      "type": "log",
+      "title": "Backoff set to zero",
+      "content": "retry scheduler loaded config retry_backoff_ms=0 from override.",
+      "relevant": true,
+      "tags": [
+        "config",
+        "retry"
+      ],
+      "unlock_condition": "mn1_alert_retry_qps"
+    },
+    {
+      "id": "mn1_log_sms_gateway_warning",
+      "type": "log",
+      "title": "SMS gateway warning",
+      "content": "gateway returned occasional 429 but below failover threshold.",
+      "relevant": false,
+      "tags": [
+        "sms",
+        "provider"
+      ],
+      "unlock_condition": "mn1_alert_retry_qps"
+    },
+    {
+      "id": "mn1_log_duplicate_jobs",
+      "type": "log",
+      "title": "Duplicate job fanout",
+      "content": "same notification job retried 37 times within one minute.",
+      "relevant": true,
+      "tags": [
+        "queue",
+        "duplication"
+      ],
+      "unlock_condition": "mn1_log_backoff_zero"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "mn1_runbook_restore_retry_policy",
+      "type": "runbook",
+      "title": "Retry policy rollback",
+      "content": "Restore exponential backoff profile and purge duplicate queued retries.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "retry"
+      ],
+      "unlock_condition": "mn1_log_backoff_zero"
+    },
+    {
+      "id": "mn1_runbook_provider_failover",
+      "type": "runbook",
+      "title": "Provider failover runbook",
+      "content": "Fail over only on sustained provider outage with elevated 5xx.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "provider"
+      ],
+      "unlock_condition": "mn1_alert_provider_ack_delay"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "mn1_timeline_hotfix_override",
+      "type": "timeline",
+      "title": "Temporary hotfix override",
+      "content": "On-call applied retry override for testing and forgot rollback.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "config-change"
+      ],
+      "unlock_condition": "mn1_log_backoff_zero"
+    }
+  ],
+  "red_herrings": [
+    "Provider latency warning appears relevant but cannot explain zero-backoff local retry behavior."
+  ],
+  "true_severity": "SEV-2",
+  "true_owner_team": "notifications-ops",
+  "true_root_cause": "Retry backoff misconfiguration created notification retry storm",
+  "true_root_cause_aliases": [
+    "retry policy set to zero backoff",
+    "notifications retry config regression"
+  ],
+  "true_mitigation": "Restore exponential backoff policy and purge duplicate retries",
+  "true_mitigation_aliases": [
+    "rollback retry config and clean duplicate jobs",
+    "re-enable backoff and drain retry storm queue"
+  ],
+  "required_evidence_ids": [
+    "mn1_alert_retry_qps",
+    "mn1_log_backoff_zero",
+    "mn1_log_duplicate_jobs",
+    "mn1_runbook_restore_retry_policy"
+  ],
+  "max_steps": 10,
+  "initial_visible_evidence_ids": [
+    "mn1_alert_retry_qps",
+    "mn1_alert_provider_ack_delay"
+  ],
+  "recommended_actions": [
+    "inspect_alert mn1_alert_retry_qps",
+    "inspect_log mn1_log_backoff_zero",
+    "inspect_log mn1_log_duplicate_jobs",
+    "inspect_runbook mn1_runbook_restore_retry_policy",
+    "set_severity SEV-2",
+    "assign_team notifications-ops",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

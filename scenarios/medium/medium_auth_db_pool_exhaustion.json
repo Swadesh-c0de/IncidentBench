@@ -1,0 +1,146 @@
+{
+  "scenario_id": "medium_auth_db_pool_exhaustion",
+  "title": "Auth DB pool exhaustion after canary",
+  "difficulty": "medium",
+  "service": "auth",
+  "incident_summary": "Session refresh calls time out, and login reliability is collapsing across regions.",
+  "alerts": [
+    {
+      "id": "ma1_alert_db_pool_saturation",
+      "type": "alert",
+      "title": "DB pool saturation",
+      "content": "Auth DB connection pool reached 100% and queue depth rising.",
+      "relevant": true,
+      "tags": [
+        "auth",
+        "database"
+      ]
+    },
+    {
+      "id": "ma1_alert_cpu_high",
+      "type": "alert",
+      "title": "Auth CPU high",
+      "content": "Auth CPU elevated due to request retries.",
+      "relevant": false,
+      "tags": [
+        "auth",
+        "cpu"
+      ],
+      "unlock_condition": "ma1_alert_db_pool_saturation"
+    }
+  ],
+  "logs": [
+    {
+      "id": "ma1_log_connection_leak_trace",
+      "type": "log",
+      "title": "Connection leak trace",
+      "content": "session-refresh path missing connection close in canary build.",
+      "relevant": true,
+      "tags": [
+        "canary",
+        "db"
+      ],
+      "unlock_condition": "ma1_alert_db_pool_saturation"
+    },
+    {
+      "id": "ma1_log_read_replica_lag",
+      "type": "log",
+      "title": "Replica lag warning",
+      "content": "Replica lag rose slightly but primary write path unaffected.",
+      "relevant": false,
+      "tags": [
+        "database",
+        "replica"
+      ],
+      "unlock_condition": "ma1_alert_db_pool_saturation"
+    },
+    {
+      "id": "ma1_log_canary_route_enabled",
+      "type": "log",
+      "title": "Canary route enabled",
+      "content": "10% traffic routed to auth-canary deployment.",
+      "relevant": true,
+      "tags": [
+        "routing",
+        "deploy"
+      ],
+      "unlock_condition": "ma1_alert_db_pool_saturation"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "ma1_runbook_disable_canary",
+      "type": "runbook",
+      "title": "Canary rollback procedure",
+      "content": "Disable canary traffic, recycle pods, and verify pool usage recovers.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "rollback"
+      ],
+      "unlock_condition": "ma1_log_connection_leak_trace"
+    },
+    {
+      "id": "ma1_runbook_scale_read_replicas",
+      "type": "runbook",
+      "title": "Read replica scaling",
+      "content": "Use for read saturation incidents, not connection leaks.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "database"
+      ],
+      "unlock_condition": "ma1_alert_db_pool_saturation"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "ma1_timeline_canary_start",
+      "type": "timeline",
+      "title": "Auth canary start",
+      "content": "Auth canary started 17 minutes before pool saturation alert.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "release"
+      ],
+      "unlock_condition": "ma1_log_canary_route_enabled"
+    }
+  ],
+  "red_herrings": [
+    "Replica lag warnings suggest data-plane stress but do not explain connection leak signature."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "auth-oncall",
+  "true_root_cause": "Connection leak in auth canary exhausted database pool",
+  "true_root_cause_aliases": [
+    "auth canary db connection leak",
+    "session refresh leak consumed pool"
+  ],
+  "true_mitigation": "Disable canary traffic and restart leaking auth pods",
+  "true_mitigation_aliases": [
+    "rollback auth canary and recycle deployment",
+    "stop canary route then restart auth service"
+  ],
+  "required_evidence_ids": [
+    "ma1_alert_db_pool_saturation",
+    "ma1_log_connection_leak_trace",
+    "ma1_timeline_canary_start",
+    "ma1_runbook_disable_canary"
+  ],
+  "max_steps": 10,
+  "initial_visible_evidence_ids": [
+    "ma1_alert_db_pool_saturation"
+  ],
+  "recommended_actions": [
+    "inspect_alert ma1_alert_db_pool_saturation",
+    "inspect_log ma1_log_connection_leak_trace",
+    "inspect_timeline_note ma1_timeline_canary_start",
+    "inspect_runbook ma1_runbook_disable_canary",
+    "set_severity SEV-1",
+    "assign_team auth-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

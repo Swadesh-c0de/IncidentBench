@@ -1,0 +1,157 @@
+{
+  "scenario_id": "medium_payments_region_misroute",
+  "title": "EU payments misrouted to unsupported gateway",
+  "difficulty": "medium",
+  "service": "payments",
+  "incident_summary": "EU card declines spike while US traffic remains healthy, suggesting regional routing issue.",
+  "alerts": [
+    {
+      "id": "mp1_alert_eu_declines",
+      "type": "alert",
+      "title": "EU decline spike",
+      "content": "EU decline rate jumped from 6% to 41%.",
+      "relevant": true,
+      "tags": [
+        "payments",
+        "region"
+      ]
+    },
+    {
+      "id": "mp1_alert_gateway_latency",
+      "type": "alert",
+      "title": "Gateway latency warning",
+      "content": "US-east gateway latency increased by 90ms.",
+      "relevant": false,
+      "tags": [
+        "payments",
+        "latency"
+      ],
+      "unlock_condition": "mp1_alert_eu_declines"
+    }
+  ],
+  "logs": [
+    {
+      "id": "mp1_log_region_override",
+      "type": "log",
+      "title": "Region override rule applied",
+      "content": "router policy forced eu-west traffic to us-east primary gateway.",
+      "relevant": true,
+      "tags": [
+        "router",
+        "policy"
+      ],
+      "unlock_condition": "mp1_alert_eu_declines"
+    },
+    {
+      "id": "mp1_log_issuer_timeout_noise",
+      "type": "log",
+      "title": "Issuer timeout noise",
+      "content": "Issuer timeouts are flat and within baseline noise.",
+      "relevant": false,
+      "tags": [
+        "issuer"
+      ],
+      "unlock_condition": "mp1_alert_eu_declines"
+    },
+    {
+      "id": "mp1_log_gateway_mandate_error",
+      "type": "log",
+      "title": "Mandate unsupported error",
+      "content": "gateway responded mandate_not_supported for EU recurring payments.",
+      "relevant": true,
+      "tags": [
+        "gateway",
+        "mandate"
+      ],
+      "unlock_condition": "mp1_log_region_override"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "mp1_runbook_restore_region_routing",
+      "type": "runbook",
+      "title": "Regional routing rollback",
+      "content": "Restore EU routing policy to eu-central gateway and replay failed intents.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "routing"
+      ],
+      "unlock_condition": "mp1_log_region_override"
+    },
+    {
+      "id": "mp1_runbook_raise_retries",
+      "type": "runbook",
+      "title": "Increase retries",
+      "content": "Retry increase is ineffective for deterministic mandate failures.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "retries"
+      ],
+      "unlock_condition": "mp1_alert_eu_declines"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "mp1_timeline_policy_change",
+      "type": "timeline",
+      "title": "Router policy edit",
+      "content": "Ops policy update changed eu-west priority route to us-east.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "routing"
+      ],
+      "unlock_condition": "mp1_log_region_override"
+    },
+    {
+      "id": "mp1_timeline_issuer_notice",
+      "type": "timeline",
+      "title": "Issuer bulletin",
+      "content": "Issuer posted advisory for minor auth latency but not regional mandate failures.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "issuer"
+      ],
+      "unlock_condition": "mp1_alert_eu_declines"
+    }
+  ],
+  "red_herrings": [
+    "Latency warning on US-east gateway appears severe but does not explain EU-specific mandate errors."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "payments-oncall",
+  "true_root_cause": "Routing policy misrouted EU traffic to unsupported US gateway",
+  "true_root_cause_aliases": [
+    "eu payments sent to wrong region gateway",
+    "region misroute in payments router"
+  ],
+  "true_mitigation": "Restore EU regional routing policy and replay failed payment intents",
+  "true_mitigation_aliases": [
+    "rollback payments region routing and retry failed intents",
+    "route EU traffic back to eu-central gateway"
+  ],
+  "required_evidence_ids": [
+    "mp1_alert_eu_declines",
+    "mp1_log_region_override",
+    "mp1_log_gateway_mandate_error",
+    "mp1_runbook_restore_region_routing"
+  ],
+  "max_steps": 10,
+  "initial_visible_evidence_ids": [
+    "mp1_alert_eu_declines"
+  ],
+  "recommended_actions": [
+    "inspect_alert mp1_alert_eu_declines",
+    "inspect_log mp1_log_region_override",
+    "inspect_log mp1_log_gateway_mandate_error",
+    "inspect_runbook mp1_runbook_restore_region_routing",
+    "set_severity SEV-1",
+    "assign_team payments-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "scenario_id": "medium_checkout_flag_rollout",
+  "title": "Checkout failures after fraud flag rollout",
+  "difficulty": "medium",
+  "service": "checkout",
+  "incident_summary": "Successful checkout rate dropped sharply after a risk-control rollout window.",
+  "alerts": [
+    {
+      "id": "mc1_alert_checkout_fail_rate",
+      "type": "alert",
+      "title": "Checkout failure rate critical",
+      "content": "Failure rate increased from 2% to 19% within 12 minutes.",
+      "relevant": true,
+      "tags": [
+        "checkout",
+        "errors"
+      ]
+    },
+    {
+      "id": "mc1_alert_gateway_timeout",
+      "type": "alert",
+      "title": "Gateway timeout warning",
+      "content": "Edge gateway timeout alerts increased but primarily on checkout paths.",
+      "relevant": false,
+      "tags": [
+        "gateway",
+        "latency"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    }
+  ],
+  "logs": [
+    {
+      "id": "mc1_log_flag_rule_reject",
+      "type": "log",
+      "title": "Fraud rule hard reject",
+      "content": "risk_engine: rule strict_card_geo_mismatch rejecting 82% of attempts.",
+      "relevant": true,
+      "tags": [
+        "feature-flag",
+        "fraud"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    },
+    {
+      "id": "mc1_log_payment_declines_normal",
+      "type": "log",
+      "title": "Issuer decline baseline",
+      "content": "Issuer decline percentage unchanged from historical baseline.",
+      "relevant": false,
+      "tags": [
+        "payments"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    },
+    {
+      "id": "mc1_log_db_latency_noise",
+      "type": "log",
+      "title": "DB latency blip",
+      "content": "short-lived DB read latency spike recovered in 3 minutes.",
+      "relevant": false,
+      "tags": [
+        "database"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "mc1_runbook_flag_rollback",
+      "type": "runbook",
+      "title": "Feature flag rollback",
+      "content": "Roll fraud rule rollout back to previous cohort and monitor conversion for 15 min.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "feature-flag"
+      ],
+      "unlock_condition": "mc1_log_flag_rule_reject"
+    },
+    {
+      "id": "mc1_runbook_payment_failover",
+      "type": "runbook",
+      "title": "Payment gateway failover",
+      "content": "Use only when issuer authorization latency is root signal.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "payments"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    },
+    {
+      "id": "mc1_runbook_provider_health_check",
+      "type": "runbook",
+      "title": "provider status triage",
+      "content": "Only fail over payment provider when provider error-rate dominates and fraud-rule counters remain stable.",
+      "relevant": false,
+      "unlock_condition": "mc1_alert_provider_latency",
+      "tags": [
+        "checkout",
+        "provider",
+        "triage"
+      ]
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "mc1_timeline_rollout_100",
+      "type": "timeline",
+      "title": "Risk flag to 100%",
+      "content": "strict_card_geo_mismatch rollout moved from 20% to 100% at 14:02 UTC.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "release"
+      ],
+      "unlock_condition": "mc1_log_flag_rule_reject"
+    },
+    {
+      "id": "mc1_timeline_marketing_campaign",
+      "type": "timeline",
+      "title": "Promo campaign started",
+      "content": "Promo campaign launched at 13:00 UTC with stable traffic profile.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "business"
+      ],
+      "unlock_condition": "mc1_alert_checkout_fail_rate"
+    }
+  ],
+  "red_herrings": [
+    "Payment provider status page shows elevated latency in one region but request success remains normal.",
+    "Gateway timeout alerts suggest edge instability without matching root symptom direction."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "checkout-oncall",
+  "true_root_cause": "Fraud feature flag rolled to 100 percent with overly strict reject rule",
+  "true_root_cause_aliases": [
+    "checkout risk flag strict rule rollout",
+    "feature flag caused mass fraud-rule rejects"
+  ],
+  "true_mitigation": "Rollback fraud flag rollout and restore previous cohort percentage",
+  "true_mitigation_aliases": [
+    "reduce strict fraud rule rollout immediately",
+    "revert risk feature flag to prior setting"
+  ],
+  "required_evidence_ids": [
+    "mc1_alert_checkout_fail_rate",
+    "mc1_log_flag_rule_reject",
+    "mc1_timeline_rollout_100",
+    "mc1_runbook_flag_rollback"
+  ],
+  "max_steps": 10,
+  "initial_visible_evidence_ids": [
+    "mc1_alert_checkout_fail_rate"
+  ],
+  "recommended_actions": [
+    "inspect_alert mc1_alert_checkout_fail_rate",
+    "inspect_log mc1_log_flag_rule_reject",
+    "inspect_timeline_note mc1_timeline_rollout_100",
+    "inspect_runbook mc1_runbook_flag_rollback",
+    "set_severity SEV-1",
+    "assign_team checkout-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

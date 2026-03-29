@@ -1,0 +1,157 @@
+{
+  "scenario_id": "medium_email_provider_vs_config",
+  "title": "Email sends failing: provider outage or local config",
+  "difficulty": "medium",
+  "service": "email",
+  "incident_summary": "Transactional email success dropped to 61%; two plausible causes appear in monitoring.",
+  "alerts": [
+    {
+      "id": "me1_alert_smtp_auth_fail",
+      "type": "alert",
+      "title": "SMTP auth failures",
+      "content": "SMTP AUTH failures increased 18x in transactional mail workers.",
+      "relevant": true,
+      "tags": [
+        "email",
+        "auth"
+      ]
+    },
+    {
+      "id": "me1_alert_provider_latency",
+      "type": "alert",
+      "title": "Provider latency elevated",
+      "content": "Provider API latency elevated in one zone but without widespread 5xx.",
+      "relevant": false,
+      "tags": [
+        "provider",
+        "latency"
+      ],
+      "unlock_condition": "me1_alert_smtp_auth_fail"
+    }
+  ],
+  "logs": [
+    {
+      "id": "me1_log_invalid_credentials",
+      "type": "log",
+      "title": "Invalid SMTP credentials",
+      "content": "mailer-worker auth failed: 535 authentication credentials invalid.",
+      "relevant": true,
+      "tags": [
+        "credentials",
+        "smtp"
+      ],
+      "unlock_condition": "me1_alert_smtp_auth_fail"
+    },
+    {
+      "id": "me1_log_provider_502_sporadic",
+      "type": "log",
+      "title": "Sporadic 502s",
+      "content": "Occasional 502 from provider edge in non-primary region.",
+      "relevant": false,
+      "tags": [
+        "provider"
+      ],
+      "unlock_condition": "me1_alert_smtp_auth_fail"
+    },
+    {
+      "id": "me1_log_secret_refresh_skipped",
+      "type": "log",
+      "title": "Secret refresh hook skipped",
+      "content": "worker did not reload rotated smtp_secret due to stale checksum cache.",
+      "relevant": true,
+      "tags": [
+        "secrets",
+        "reload"
+      ],
+      "unlock_condition": "me1_log_invalid_credentials"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "me1_runbook_reload_smtp_secret",
+      "type": "runbook",
+      "title": "SMTP secret refresh",
+      "content": "Force worker secret refresh and restart deployment to pick rotated credentials.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "secrets"
+      ],
+      "unlock_condition": "me1_log_secret_refresh_skipped"
+    },
+    {
+      "id": "me1_runbook_provider_failover",
+      "type": "runbook",
+      "title": "Provider failover",
+      "content": "Fail over to secondary provider only if primary provider wide outage confirmed.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "provider"
+      ],
+      "unlock_condition": "me1_alert_provider_latency"
+    },
+    {
+      "id": "me1_runbook_requeue_failed",
+      "type": "runbook",
+      "title": "Failed message replay",
+      "content": "After credential fix, replay failed transactional messages from retry-safe queue.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "recovery"
+      ],
+      "unlock_condition": "me1_log_secret_refresh_skipped"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "me1_timeline_secret_rotation",
+      "type": "timeline",
+      "title": "SMTP secret rotated",
+      "content": "SMTP credentials rotated 25 minutes before auth failures.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "rotation"
+      ],
+      "unlock_condition": "me1_log_invalid_credentials"
+    }
+  ],
+  "red_herrings": [
+    "Provider dashboard shows latency warning that does not align with authentication errors."
+  ],
+  "true_severity": "SEV-2",
+  "true_owner_team": "email-ops",
+  "true_root_cause": "SMTP credentials rotated but email workers kept stale secret",
+  "true_root_cause_aliases": [
+    "stale smtp secret in workers",
+    "credential rotation not reloaded in mailer"
+  ],
+  "true_mitigation": "Reload workers with updated SMTP secret and requeue failed messages",
+  "true_mitigation_aliases": [
+    "restart mailer workers after secret refresh",
+    "apply new smtp creds and replay failed sends"
+  ],
+  "required_evidence_ids": [
+    "me1_alert_smtp_auth_fail",
+    "me1_log_invalid_credentials",
+    "me1_log_secret_refresh_skipped",
+    "me1_runbook_reload_smtp_secret"
+  ],
+  "max_steps": 10,
+  "initial_visible_evidence_ids": [
+    "me1_alert_smtp_auth_fail"
+  ],
+  "recommended_actions": [
+    "inspect_alert me1_alert_smtp_auth_fail",
+    "inspect_log me1_log_invalid_credentials",
+    "inspect_log me1_log_secret_refresh_skipped",
+    "inspect_runbook me1_runbook_reload_smtp_secret",
+    "set_severity SEV-2",
+    "assign_team email-ops",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}
