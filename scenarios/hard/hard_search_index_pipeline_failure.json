@@ -1,0 +1,184 @@
+{
+  "scenario_id": "hard_search_index_pipeline_failure",
+  "title": "Search index pipeline dropping updates after schema migration",
+  "difficulty": "hard",
+  "service": "search",
+  "incident_summary": "Search freshness degrades unevenly; indexing pipeline appears healthy at first glance.",
+  "alerts": [
+    {
+      "id": "hs1_alert_freshness_backlog",
+      "type": "alert",
+      "title": "Index freshness backlog",
+      "content": "Freshness lag exceeds 40 minutes for catalog updates.",
+      "relevant": true,
+      "tags": [
+        "search",
+        "freshness"
+      ]
+    },
+    {
+      "id": "hs1_alert_kafka_lag_minor",
+      "type": "alert",
+      "title": "Kafka lag advisory",
+      "content": "Kafka lag slightly elevated but consumer throughput appears steady.",
+      "relevant": false,
+      "tags": [
+        "kafka",
+        "streaming"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    },
+    {
+      "id": "hs1_alert_query_error_low",
+      "type": "alert",
+      "title": "Query error low",
+      "content": "Query error rates remain low despite freshness incidents.",
+      "relevant": false,
+      "tags": [
+        "search",
+        "query"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    }
+  ],
+  "logs": [
+    {
+      "id": "hs1_log_schema_mismatch_drop",
+      "type": "log",
+      "title": "Schema mismatch drops",
+      "content": "index-writer dropping update batches: field sku_tags type mismatch.",
+      "relevant": true,
+      "tags": [
+        "schema",
+        "indexer"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    },
+    {
+      "id": "hs1_log_pipeline_green_metric",
+      "type": "log",
+      "title": "Pipeline health green",
+      "content": "pipeline health checker still green due to missing drop metric binding.",
+      "relevant": false,
+      "tags": [
+        "monitoring"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    },
+    {
+      "id": "hs1_log_migration_job_start",
+      "type": "log",
+      "title": "Schema migration started",
+      "content": "migration job search_schema_v42 started before freshness lag rise.",
+      "relevant": true,
+      "tags": [
+        "migration",
+        "index"
+      ],
+      "unlock_condition": "hs1_log_schema_mismatch_drop"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "hs1_runbook_schema_rollback_replay",
+      "type": "runbook",
+      "title": "Schema rollback and replay",
+      "content": "Rollback index schema version and replay update topic from checkpoint.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "replay"
+      ],
+      "unlock_condition": "hs1_log_schema_mismatch_drop"
+    },
+    {
+      "id": "hs1_runbook_scale_consumers",
+      "type": "runbook",
+      "title": "Scale consumers",
+      "content": "Scaling consumers is insufficient when records are dropped by schema mismatch.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "capacity"
+      ],
+      "unlock_condition": "hs1_alert_kafka_lag_minor"
+    },
+    {
+      "id": "hs1_runbook_query_cache_flush",
+      "type": "runbook",
+      "title": "Query cache flush",
+      "content": "Cache flush can improve stale reads temporarily but will not restore dropped index updates.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "cache"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "hs1_timeline_migration_approval",
+      "type": "timeline",
+      "title": "Migration approval",
+      "content": "Search schema migration approved and deployed at 07:15 UTC.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "change"
+      ],
+      "unlock_condition": "hs1_log_migration_job_start"
+    },
+    {
+      "id": "hs1_timeline_catalog_sync",
+      "type": "timeline",
+      "title": "Catalog sync event",
+      "content": "Catalog sync ran as usual and completed successfully.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "business"
+      ],
+      "unlock_condition": "hs1_alert_freshness_backlog"
+    }
+  ],
+  "red_herrings": [
+    "Kafka lag warning and green health checks suggest capacity issue instead of schema-based drops.",
+    "Low query error hides data freshness regression."
+  ],
+  "true_severity": "SEV-2",
+  "true_owner_team": "search-infra",
+  "true_root_cause": "Schema migration caused index writer to drop update batches",
+  "true_root_cause_aliases": [
+    "index pipeline schema mismatch dropping records",
+    "search schema v42 regression in writer"
+  ],
+  "true_mitigation": "Rollback schema migration and replay index update stream from checkpoint",
+  "true_mitigation_aliases": [
+    "revert index schema and replay kafka updates",
+    "undo migration then reprocess dropped batches"
+  ],
+  "required_evidence_ids": [
+    "hs1_alert_freshness_backlog",
+    "hs1_log_schema_mismatch_drop",
+    "hs1_log_migration_job_start",
+    "hs1_timeline_migration_approval",
+    "hs1_runbook_schema_rollback_replay"
+  ],
+  "max_steps": 12,
+  "initial_visible_evidence_ids": [
+    "hs1_alert_freshness_backlog"
+  ],
+  "recommended_actions": [
+    "inspect_alert hs1_alert_freshness_backlog",
+    "inspect_log hs1_log_schema_mismatch_drop",
+    "inspect_log hs1_log_migration_job_start",
+    "inspect_timeline_note hs1_timeline_migration_approval",
+    "inspect_runbook hs1_runbook_schema_rollback_replay",
+    "set_severity SEV-2",
+    "assign_team search-infra",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

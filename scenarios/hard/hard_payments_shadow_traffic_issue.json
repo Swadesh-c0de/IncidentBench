@@ -1,0 +1,172 @@
+{
+  "scenario_id": "hard_payments_shadow_traffic_issue",
+  "title": "Payments duplicate authorizations from shadow traffic leak",
+  "difficulty": "hard",
+  "service": "payments",
+  "incident_summary": "Card authorization duplicates and idempotency conflicts surge after an experiment rollout.",
+  "alerts": [
+    {
+      "id": "hp1_alert_duplicate_auth",
+      "type": "alert",
+      "title": "Duplicate authorization spike",
+      "content": "duplicate auth attempts increased 11x with customer double-charge risk.",
+      "relevant": true,
+      "tags": [
+        "payments",
+        "idempotency"
+      ]
+    },
+    {
+      "id": "hp1_alert_gateway_timeout",
+      "type": "alert",
+      "title": "Gateway timeout warning",
+      "content": "gateway timeout rate rose to 3% but is not dominant failure mode.",
+      "relevant": false,
+      "tags": [
+        "gateway",
+        "latency"
+      ],
+      "unlock_condition": "hp1_alert_duplicate_auth"
+    },
+    {
+      "id": "hp1_alert_fraud_engine_noise",
+      "type": "alert",
+      "title": "Fraud score variance",
+      "content": "fraud model score variance increased but approval rates unchanged.",
+      "relevant": false,
+      "tags": [
+        "fraud"
+      ],
+      "unlock_condition": "hp1_alert_duplicate_auth"
+    }
+  ],
+  "logs": [
+    {
+      "id": "hp1_log_shadow_header_route",
+      "type": "log",
+      "title": "Shadow header leaked into prod",
+      "content": "router treated x-shadow-experiment header as primary path key.",
+      "relevant": true,
+      "tags": [
+        "router",
+        "experiment"
+      ],
+      "unlock_condition": "hp1_alert_duplicate_auth"
+    },
+    {
+      "id": "hp1_log_idempotency_collision",
+      "type": "log",
+      "title": "Idempotency collisions",
+      "content": "idempotency namespace collision between shadow and production requests.",
+      "relevant": true,
+      "tags": [
+        "idempotency",
+        "payments"
+      ],
+      "unlock_condition": "hp1_log_shadow_header_route"
+    },
+    {
+      "id": "hp1_log_gateway_latency_noise",
+      "type": "log",
+      "title": "Gateway latency noise",
+      "content": "latency increase present without duplicate transaction signatures.",
+      "relevant": false,
+      "tags": [
+        "gateway"
+      ],
+      "unlock_condition": "hp1_alert_gateway_timeout"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "hp1_runbook_disable_shadow_mirror",
+      "type": "runbook",
+      "title": "Disable shadow mirror",
+      "content": "Disable mirror rule, separate idempotency namespace, and replay safe failed intents.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "experiment"
+      ],
+      "unlock_condition": "hp1_log_idempotency_collision"
+    },
+    {
+      "id": "hp1_runbook_gateway_failover",
+      "type": "runbook",
+      "title": "Gateway failover",
+      "content": "Fail over only when gateway outage is primary fault signal.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "gateway"
+      ],
+      "unlock_condition": "hp1_alert_gateway_timeout"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "hp1_timeline_experiment_enable",
+      "type": "timeline",
+      "title": "Shadow experiment enabled",
+      "content": "shadow authorization experiment enabled at 16:20 UTC.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "experiment"
+      ],
+      "unlock_condition": "hp1_log_shadow_header_route"
+    },
+    {
+      "id": "hp1_timeline_fraud_model_release",
+      "type": "timeline",
+      "title": "Fraud model release",
+      "content": "fraud model patch deployed at 15:00 UTC with no auth path changes.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "ml"
+      ],
+      "unlock_condition": "hp1_alert_duplicate_auth"
+    }
+  ],
+  "red_herrings": [
+    "Gateway timeout alarms and fraud model variance distract from duplicate authorization signature.",
+    "Shadow traffic issue is subtle because baseline success rate remains high for non-duplicated flows."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "payments-oncall",
+  "true_root_cause": "Shadow traffic header leak caused duplicate production authorization paths",
+  "true_root_cause_aliases": [
+    "shadow mirror rule leaked into prod routing",
+    "experiment header created duplicate payment auth requests"
+  ],
+  "true_mitigation": "Disable shadow mirror rule and separate idempotency namespace before replay",
+  "true_mitigation_aliases": [
+    "turn off shadow payment routing and fix idempotency keys",
+    "disable experiment mirror then replay impacted intents safely"
+  ],
+  "required_evidence_ids": [
+    "hp1_alert_duplicate_auth",
+    "hp1_log_shadow_header_route",
+    "hp1_log_idempotency_collision",
+    "hp1_timeline_experiment_enable",
+    "hp1_runbook_disable_shadow_mirror"
+  ],
+  "max_steps": 12,
+  "initial_visible_evidence_ids": [
+    "hp1_alert_duplicate_auth",
+    "hp1_alert_gateway_timeout"
+  ],
+  "recommended_actions": [
+    "inspect_alert hp1_alert_duplicate_auth",
+    "inspect_log hp1_log_shadow_header_route",
+    "inspect_log hp1_log_idempotency_collision",
+    "inspect_timeline_note hp1_timeline_experiment_enable",
+    "inspect_runbook hp1_runbook_disable_shadow_mirror",
+    "set_severity SEV-1",
+    "assign_team payments-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

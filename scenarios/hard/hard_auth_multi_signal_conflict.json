@@ -1,0 +1,172 @@
+{
+  "scenario_id": "hard_auth_multi_signal_conflict",
+  "title": "Auth failures mimic attack but stem from clock skew",
+  "difficulty": "hard",
+  "service": "auth",
+  "incident_summary": "Failed OAuth logins and nonce errors resemble credential attack, but service telemetry conflicts.",
+  "alerts": [
+    {
+      "id": "ha1_alert_nonce_mismatch",
+      "type": "alert",
+      "title": "Nonce mismatch spike",
+      "content": "OAuth nonce mismatch alerts climbed to 33% of auth attempts.",
+      "relevant": true,
+      "tags": [
+        "auth",
+        "oauth"
+      ]
+    },
+    {
+      "id": "ha1_alert_bruteforce_signal",
+      "type": "alert",
+      "title": "Bruteforce detector warning",
+      "content": "Anomaly detector reports elevated failed logins from mixed IP ranges.",
+      "relevant": false,
+      "tags": [
+        "security",
+        "attack"
+      ],
+      "unlock_condition": "ha1_alert_nonce_mismatch"
+    },
+    {
+      "id": "ha1_alert_cache_latency",
+      "type": "alert",
+      "title": "Session cache latency",
+      "content": "Session cache latency +20ms, no major error increase.",
+      "relevant": false,
+      "tags": [
+        "cache"
+      ],
+      "unlock_condition": "ha1_alert_nonce_mismatch"
+    }
+  ],
+  "logs": [
+    {
+      "id": "ha1_log_clock_skew_node7",
+      "type": "log",
+      "title": "Clock skew on auth-node-7",
+      "content": "auth-node-7 clock drifted +97 seconds; nonce validity checks failing.",
+      "relevant": true,
+      "tags": [
+        "time-sync",
+        "auth"
+      ],
+      "unlock_condition": "ha1_alert_nonce_mismatch"
+    },
+    {
+      "id": "ha1_log_ntp_daemon_stopped",
+      "type": "log",
+      "title": "NTP daemon stopped",
+      "content": "ntpd service exited on auth-node-7 after base image update.",
+      "relevant": true,
+      "tags": [
+        "ntp",
+        "host"
+      ],
+      "unlock_condition": "ha1_log_clock_skew_node7"
+    },
+    {
+      "id": "ha1_log_failed_password_attempts",
+      "type": "log",
+      "title": "Password failures mixed traffic",
+      "content": "failed password attempts distributed normally across pods.",
+      "relevant": false,
+      "tags": [
+        "security"
+      ],
+      "unlock_condition": "ha1_alert_bruteforce_signal"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "ha1_runbook_time_sync_recover",
+      "type": "runbook",
+      "title": "Clock skew recovery",
+      "content": "Isolate skewed node, restart NTP, and verify nonce acceptance rate.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "time-sync"
+      ],
+      "unlock_condition": "ha1_log_ntp_daemon_stopped"
+    },
+    {
+      "id": "ha1_runbook_attack_lockdown",
+      "type": "runbook",
+      "title": "Attack lockdown",
+      "content": "Enable strict lockout only if malicious IP concentration is confirmed.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "security"
+      ],
+      "unlock_condition": "ha1_alert_bruteforce_signal"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "ha1_timeline_image_rollout",
+      "type": "timeline",
+      "title": "Base image rollout",
+      "content": "Node image rollout completed on auth-node-7 before drift began.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "infrastructure"
+      ],
+      "unlock_condition": "ha1_log_ntp_daemon_stopped"
+    },
+    {
+      "id": "ha1_timeline_partner_launch",
+      "type": "timeline",
+      "title": "Partner launch event",
+      "content": "Large partner launch added traffic but no auth protocol changes.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "business"
+      ],
+      "unlock_condition": "ha1_alert_nonce_mismatch"
+    }
+  ],
+  "red_herrings": [
+    "Bruteforce detector warns about failed logins but lacks concentrated malicious source pattern.",
+    "Cache latency increase is small and not tied to nonce-specific failures."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "auth-oncall",
+  "true_root_cause": "Clock skew on auth node caused OAuth nonce validation failures",
+  "true_root_cause_aliases": [
+    "ntp drift on auth node invalidated nonce window",
+    "time sync failure triggered nonce mismatches"
+  ],
+  "true_mitigation": "Isolate skewed node, restore NTP sync, and return node after validation",
+  "true_mitigation_aliases": [
+    "remove drifted auth node and fix ntp",
+    "restart time sync service and recover nonce checks"
+  ],
+  "required_evidence_ids": [
+    "ha1_alert_nonce_mismatch",
+    "ha1_log_clock_skew_node7",
+    "ha1_log_ntp_daemon_stopped",
+    "ha1_timeline_image_rollout",
+    "ha1_runbook_time_sync_recover"
+  ],
+  "max_steps": 12,
+  "initial_visible_evidence_ids": [
+    "ha1_alert_nonce_mismatch",
+    "ha1_alert_bruteforce_signal"
+  ],
+  "recommended_actions": [
+    "inspect_alert ha1_alert_nonce_mismatch",
+    "inspect_log ha1_log_clock_skew_node7",
+    "inspect_log ha1_log_ntp_daemon_stopped",
+    "inspect_timeline_note ha1_timeline_image_rollout",
+    "inspect_runbook ha1_runbook_time_sync_recover",
+    "set_severity SEV-1",
+    "assign_team auth-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

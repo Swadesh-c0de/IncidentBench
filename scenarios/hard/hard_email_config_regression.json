@@ -1,0 +1,185 @@
+{
+  "scenario_id": "hard_email_config_regression",
+  "title": "Email outage from signer config regression",
+  "difficulty": "hard",
+  "service": "email",
+  "incident_summary": "Transactional email delivery failed suddenly after config rollout; provider telemetry is noisy and misleading.",
+  "alerts": [
+    {
+      "id": "he1_alert_delivery_drop",
+      "type": "alert",
+      "title": "Delivery success collapse",
+      "content": "Delivery success dropped from 98.7% to 44.2%.",
+      "relevant": true,
+      "tags": [
+        "email",
+        "delivery"
+      ]
+    },
+    {
+      "id": "he1_alert_provider_latency",
+      "type": "alert",
+      "title": "Provider latency elevated",
+      "content": "Provider latency doubled for one POP but status remains green.",
+      "relevant": false,
+      "tags": [
+        "provider",
+        "latency"
+      ],
+      "unlock_condition": "he1_alert_delivery_drop"
+    },
+    {
+      "id": "he1_alert_template_compile",
+      "type": "alert",
+      "title": "Template compile failures",
+      "content": "Template compile errors increased in one campaign namespace only.",
+      "relevant": false,
+      "tags": [
+        "templates"
+      ],
+      "unlock_condition": "he1_alert_delivery_drop"
+    },
+    {
+      "id": "he1_alert_tls_sni_reject",
+      "type": "alert",
+      "title": "TLS handshake reject surge",
+      "content": "Handshake rejects spike exactly on mailer instances using signer bundle v3 without SNI metadata.",
+      "relevant": true,
+      "unlock_condition": "he1_alert_smtp_auth_fail",
+      "tags": [
+        "email",
+        "tls",
+        "sni"
+      ]
+    }
+  ],
+  "logs": [
+    {
+      "id": "he1_log_tls_sni_missing",
+      "type": "log",
+      "title": "TLS SNI missing",
+      "content": "mailer-signer v1 config omits required tls_sni field; handshake rejected.",
+      "relevant": true,
+      "tags": [
+        "tls",
+        "config"
+      ],
+      "unlock_condition": "he1_alert_delivery_drop"
+    },
+    {
+      "id": "he1_log_provider_handshake_reject",
+      "type": "log",
+      "title": "Provider handshake reject",
+      "content": "provider rejected handshake due to client hello mismatch.",
+      "relevant": true,
+      "tags": [
+        "provider",
+        "tls"
+      ],
+      "unlock_condition": "he1_log_tls_sni_missing"
+    },
+    {
+      "id": "he1_log_provider_502_noise",
+      "type": "log",
+      "title": "Sporadic provider 502",
+      "content": "sporadic 502s under 0.2% unrelated to bulk failure pattern.",
+      "relevant": false,
+      "tags": [
+        "provider"
+      ],
+      "unlock_condition": "he1_alert_provider_latency"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "he1_runbook_rollback_mailer_bundle",
+      "type": "runbook",
+      "title": "Mailer bundle rollback",
+      "content": "Rollback signer config bundle to v2, redeploy sidecar, verify TLS handshake metrics.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "rollback"
+      ],
+      "unlock_condition": "he1_log_tls_sni_missing"
+    },
+    {
+      "id": "he1_runbook_provider_failover",
+      "type": "runbook",
+      "title": "Provider failover checklist",
+      "content": "Use failover when provider outage confirmed across all POPs.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "provider"
+      ],
+      "unlock_condition": "he1_alert_provider_latency"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "he1_timeline_config_bundle_v1",
+      "type": "timeline",
+      "title": "Mailer config bundle changed",
+      "content": "Config bundle switched signer from v2 to v1 at 09:41 UTC.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "change"
+      ],
+      "unlock_condition": "he1_log_tls_sni_missing"
+    },
+    {
+      "id": "he1_timeline_marketing_blast",
+      "type": "timeline",
+      "title": "Campaign blast",
+      "content": "Large campaign launched at 09:00 UTC but via separate bulk sender.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "business"
+      ],
+      "unlock_condition": "he1_alert_delivery_drop"
+    }
+  ],
+  "red_herrings": [
+    "Provider latency and sporadic 502s suggest external fault but fail to match deterministic handshake rejections.",
+    "Template compile failures occur in a separate campaign path."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "email-ops",
+  "true_root_cause": "Mailer signer config regression removed required TLS SNI setting",
+  "true_root_cause_aliases": [
+    "signer bundle rollback needed due to missing tls sni",
+    "email config regression in signer v1"
+  ],
+  "true_mitigation": "Rollback signer config bundle to v2 and redeploy mailer sidecar",
+  "true_mitigation_aliases": [
+    "revert mailer config and redeploy signer sidecar",
+    "restore tls sni config by rolling back signer bundle"
+  ],
+  "required_evidence_ids": [
+    "he1_alert_delivery_drop",
+    "he1_log_tls_sni_missing",
+    "he1_log_provider_handshake_reject",
+    "he1_timeline_config_bundle_v1",
+    "he1_runbook_rollback_mailer_bundle",
+    "he1_alert_tls_sni_reject"
+  ],
+  "max_steps": 12,
+  "initial_visible_evidence_ids": [
+    "he1_alert_delivery_drop"
+  ],
+  "recommended_actions": [
+    "inspect_alert he1_alert_delivery_drop",
+    "inspect_log he1_log_tls_sni_missing",
+    "inspect_log he1_log_provider_handshake_reject",
+    "inspect_timeline_note he1_timeline_config_bundle_v1",
+    "inspect_runbook he1_runbook_rollback_mailer_bundle",
+    "set_severity SEV-1",
+    "assign_team email-ops",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}

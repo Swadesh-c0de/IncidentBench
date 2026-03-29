@@ -1,0 +1,185 @@
+{
+  "scenario_id": "hard_checkout_partial_outage",
+  "title": "Checkout partial outage isolated to one AZ",
+  "difficulty": "hard",
+  "service": "checkout",
+  "incident_summary": "Checkout 5xx appears intermittent and regional; false leads point toward global dependency instability.",
+  "alerts": [
+    {
+      "id": "hc1_alert_regional_5xx",
+      "type": "alert",
+      "title": "Regional checkout 5xx",
+      "content": "5xx rate hit 23% in az-b while az-a and az-c are near baseline.",
+      "relevant": true,
+      "tags": [
+        "checkout",
+        "regional"
+      ]
+    },
+    {
+      "id": "hc1_alert_redis_latency",
+      "type": "alert",
+      "title": "Redis latency warning",
+      "content": "Shared redis latency elevated by 15ms globally.",
+      "relevant": false,
+      "tags": [
+        "redis",
+        "latency"
+      ],
+      "unlock_condition": "hc1_alert_regional_5xx"
+    },
+    {
+      "id": "hc1_alert_db_errors",
+      "type": "alert",
+      "title": "DB error blip",
+      "content": "Short DB error burst resolved in under two minutes.",
+      "relevant": false,
+      "tags": [
+        "database"
+      ],
+      "unlock_condition": "hc1_alert_regional_5xx"
+    },
+    {
+      "id": "hc1_alert_azb_restarts",
+      "type": "alert",
+      "title": "AZ-b pod restart burst",
+      "content": "Checkout pods in az-b restarted 6x more than other zones.",
+      "relevant": true,
+      "tags": [
+        "checkout",
+        "az-b",
+        "restarts"
+      ],
+      "unlock_condition": "hc1_alert_regional_5xx"
+    }
+  ],
+  "logs": [
+    {
+      "id": "hc1_log_pool_max_az_b",
+      "type": "log",
+      "title": "Connection pool maxed in az-b",
+      "content": "checkout pod template in az-b sets pool_size=15, causing saturation.",
+      "relevant": true,
+      "tags": [
+        "pool",
+        "az-b"
+      ],
+      "unlock_condition": "hc1_alert_regional_5xx"
+    },
+    {
+      "id": "hc1_log_autoscaler_template_change",
+      "type": "log",
+      "title": "Autoscaler template drift",
+      "content": "autoscaler applied outdated pod template only for az-b nodes.",
+      "relevant": true,
+      "tags": [
+        "autoscaler",
+        "config"
+      ],
+      "unlock_condition": "hc1_log_pool_max_az_b"
+    },
+    {
+      "id": "hc1_log_redis_timeout_noise",
+      "type": "log",
+      "title": "Redis timeout retries",
+      "content": "redis retries increased but stay below user-facing failure thresholds.",
+      "relevant": false,
+      "tags": [
+        "redis"
+      ],
+      "unlock_condition": "hc1_alert_redis_latency"
+    }
+  ],
+  "runbook_snippets": [
+    {
+      "id": "hc1_runbook_drain_az_and_restore_pool",
+      "type": "runbook",
+      "title": "AZ drain and pool restoration",
+      "content": "Drain az-b checkout pods, restore pool_size baseline, and reschedule.",
+      "relevant": true,
+      "tags": [
+        "runbook",
+        "capacity"
+      ],
+      "unlock_condition": "hc1_log_autoscaler_template_change"
+    },
+    {
+      "id": "hc1_runbook_global_redis_failover",
+      "type": "runbook",
+      "title": "Global redis failover",
+      "content": "Only apply during cross-AZ redis unavailability.",
+      "relevant": false,
+      "tags": [
+        "runbook",
+        "redis"
+      ],
+      "unlock_condition": "hc1_alert_redis_latency"
+    }
+  ],
+  "timeline_notes": [
+    {
+      "id": "hc1_timeline_template_push",
+      "type": "timeline",
+      "title": "Template push to az-b",
+      "content": "Nodegroup template update at 11:03 UTC impacted only az-b.",
+      "relevant": true,
+      "tags": [
+        "timeline",
+        "deploy"
+      ],
+      "unlock_condition": "hc1_log_autoscaler_template_change"
+    },
+    {
+      "id": "hc1_timeline_flash_sale",
+      "type": "timeline",
+      "title": "Flash sale launch",
+      "content": "Flash sale increased load but affected all AZs uniformly.",
+      "relevant": false,
+      "tags": [
+        "timeline",
+        "traffic"
+      ],
+      "unlock_condition": "hc1_alert_regional_5xx"
+    }
+  ],
+  "red_herrings": [
+    "Global redis latency suggests central dependency issue but incident is AZ-localized.",
+    "Brief DB blip happened after primary error spike started."
+  ],
+  "true_severity": "SEV-1",
+  "true_owner_team": "checkout-oncall",
+  "true_root_cause": "Outdated az-b pod template reduced connection pool and caused partial outage",
+  "true_root_cause_aliases": [
+    "az-b checkout pool misconfiguration from template drift",
+    "single az autoscaler template caused checkout 5xx"
+  ],
+  "true_mitigation": "Drain az-b pods and restore baseline pool settings before rescheduling",
+  "true_mitigation_aliases": [
+    "remove bad az-b template and redeploy checkout pods",
+    "drain affected az then fix pool_size configuration"
+  ],
+  "required_evidence_ids": [
+    "hc1_alert_regional_5xx",
+    "hc1_log_pool_max_az_b",
+    "hc1_log_autoscaler_template_change",
+    "hc1_timeline_template_push",
+    "hc1_runbook_drain_az_and_restore_pool",
+    "hc1_alert_azb_restarts"
+  ],
+  "max_steps": 12,
+  "initial_visible_evidence_ids": [
+    "hc1_alert_regional_5xx"
+  ],
+  "recommended_actions": [
+    "inspect_alert hc1_alert_regional_5xx",
+    "inspect_log hc1_log_pool_max_az_b",
+    "inspect_log hc1_log_autoscaler_template_change",
+    "inspect_timeline_note hc1_timeline_template_push",
+    "inspect_runbook hc1_runbook_drain_az_and_restore_pool",
+    "set_severity SEV-1",
+    "assign_team checkout-oncall",
+    "submit_root_cause",
+    "submit_mitigation",
+    "resolve_incident"
+  ]
+}
